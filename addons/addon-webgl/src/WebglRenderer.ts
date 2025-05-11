@@ -26,6 +26,7 @@ import { Emitter, Event } from 'vs/base/common/event';
 import { addDisposableListener } from 'vs/base/browser/dom';
 import { combinedDisposable, Disposable, MutableDisposable, toDisposable } from 'vs/base/common/lifecycle';
 import { createRenderDimensions } from 'browser/renderer/shared/RendererUtils';
+import { PostProcessRenderer } from 'PostProcessRenderer';
 
 export class WebglRenderer extends Disposable implements IRenderer {
   private _renderLayers: IRenderLayer[];
@@ -62,6 +63,12 @@ export class WebglRenderer extends Disposable implements IRenderer {
   public readonly onRequestRedraw = this._onRequestRedraw.event;
   private readonly _onContextLoss = this._register(new Emitter<void>());
   public readonly onContextLoss = this._onContextLoss.event;
+
+  private _postProcessStartTime: number;
+  private _postProcessRenderer: MutableDisposable<PostProcessRenderer>;
+  private _framebuffer: WebGLFramebuffer | null = null;
+  private _texture: WebGLTexture | null = null;
+  private _time: number = 0;
 
   constructor(
     private _terminal: Terminal,
@@ -141,6 +148,15 @@ export class WebglRenderer extends Disposable implements IRenderer {
 
     this._isAttached = this._coreBrowserService.window.document.body.contains(this._core.screenElement!);
 
+
+    this._framebuffer = this._gl.createFramebuffer();
+    this._texture = this._gl.createTexture();
+    this._updateFramebuffer();
+
+    this._postProcessStartTime = performance.now();
+    this._postProcessRenderer = this._register(new MutableDisposable());
+    this._postProcessRenderer.value = new PostProcessRenderer(this._gl, this.dimensions);
+
     this._register(toDisposable(() => {
       for (const l of this._renderLayers) {
         l.dispose();
@@ -148,6 +164,56 @@ export class WebglRenderer extends Disposable implements IRenderer {
       this._canvas.parentElement?.removeChild(this._canvas);
       removeTerminalFromCache(this._terminal);
     }));
+  }
+
+  private _updateFramebuffer(): void {
+    const gl = this._gl;
+    const width = this.dimensions.device.canvas.width;
+    const height = this.dimensions.device.canvas.height;
+
+    if (width === 0 || height === 0) {
+      console.warn('WebglRenderer: Skipping framebuffer update due to zero dimensions.');
+      // Ensure we don't try to create a 0x0 texture
+      if (this._texture) { // If texture exists, make it a 1x1 placeholder or unbind
+        gl.bindTexture(gl.TEXTURE_2D, this._texture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, null); // Minimal valid texture
+        gl.bindTexture(gl.TEXTURE_2D, null);
+      }
+      // Or simply return if we don't want to attach an incomplete texture to the framebuffer
+      return;
+    }
+
+    gl.bindTexture(gl.TEXTURE_2D, this._texture);
+    gl.texImage2D(
+      gl.TEXTURE_2D, 0, gl.RGBA,
+      width,
+      height,
+      0, gl.RGBA, gl.UNSIGNED_BYTE, null
+    );
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this._framebuffer);
+    gl.framebufferTexture2D(
+      gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0,
+      gl.TEXTURE_2D, this._texture, 0
+    );
+
+    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    if (status !== gl.FRAMEBUFFER_COMPLETE) {
+      let statusString = 'UNKNOWN_STATUS';
+      switch (status) {
+        case gl.FRAMEBUFFER_UNSUPPORTED: statusString = 'FRAMEBUFFER_UNSUPPORTED'; break;
+        case gl.FRAMEBUFFER_INCOMPLETE_ATTACHMENT: statusString = 'FRAMEBUFFER_INCOMPLETE_ATTACHMENT'; break;
+        case gl.FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT: statusString = 'FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT'; break;
+        case gl.FRAMEBUFFER_INCOMPLETE_DIMENSIONS: statusString = 'FRAMEBUFFER_INCOMPLETE_DIMENSIONS'; break;
+      }
+      console.error(`WebglRenderer: Framebuffer incomplete: ${statusString} (0x${status.toString(16)})`);
+    }
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.bindTexture(gl.TEXTURE_2D, null);
   }
 
   public get textureAtlas(): HTMLCanvasElement | undefined {
@@ -201,6 +267,8 @@ export class WebglRenderer extends Disposable implements IRenderer {
     // Force a full refresh. Resizing `_glyphRenderer` should clear it already,
     // so there is no need to clear it again here.
     this._clearModel(false);
+
+    this._updateFramebuffer();
   }
 
   public handleCharSizeChanged(): void {
@@ -322,7 +390,8 @@ export class WebglRenderer extends Disposable implements IRenderer {
 
   public renderRows(start: number, end: number): void {
     if (!this._isAttached) {
-      if (this._coreBrowserService.window.document.body.contains(this._core.screenElement!) && this._charSizeService.width && this._charSizeService.height) {
+      if (this._coreBrowserService.window.document.body.contains(this._core.screenElement!) &&
+            this._charSizeService.width && this._charSizeService.height) {
         this._updateDimensions();
         this._refreshCharAtlas();
         this._isAttached = true;
@@ -340,14 +409,18 @@ export class WebglRenderer extends Disposable implements IRenderer {
       return;
     }
 
-    // Tell renderer the frame is beginning
-    // upon a model clear also refresh the full viewport model
-    // (also triggered by an atlas page merge, part of #4480)
+    const gl = this._gl;
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this._framebuffer);
+    gl.viewport(0, 0, this.dimensions.device.canvas.width, this.dimensions.device.canvas.height);
+
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
     if (this._glyphRenderer.value.beginFrame()) {
       this._clearModel(true);
       this._updateModel(0, this._terminal.rows - 1);
     } else {
-      // just update changed lines to draw
       this._updateModel(start, end);
     }
 
@@ -356,6 +429,27 @@ export class WebglRenderer extends Disposable implements IRenderer {
     this._glyphRenderer.value.render(this._model);
     if (!this._cursorBlinkStateManager.value || this._cursorBlinkStateManager.value.isCursorVisible) {
       this._rectangleRenderer.value.renderCursor();
+    }
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+    gl.viewport(0, 0, this.dimensions.device.canvas.width, this.dimensions.device.canvas.height);
+
+    if (this._postProcessRenderer.value && this._texture) {
+      const time = (performance.now() - this._postProcessStartTime) / 1000;
+
+      const scale = this._optionsService.rawOptions.postProcessScale || 1.0;
+      const backgroundColor = this._themeService.colors.background;
+
+      this._postProcessRenderer.value.render(
+        this._texture,
+        time,
+        scale,
+        backgroundColor
+      );
+    }
+
+    for (const layer of this._renderLayers) {
+      layer.handleGridChanged(this._terminal, 0, this._terminal.rows - 1);
     }
   }
 
