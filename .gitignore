@@ -27,3 +27,4 @@ demo/dist/
 # dont commit benchmark folders
 .benchmark/
 timeline/
+.yarn/install-state.gz

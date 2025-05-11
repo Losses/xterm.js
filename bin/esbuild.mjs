@@ -35,7 +35,7 @@ const devOptions = {
 
 /** @type {esbuild.BuildOptions} */
 const prodOptions = {
-  minify: true,
+  minify: false,
   legalComments: 'none',
   // TODO: Mangling private and protected properties will reduce bundle size quite a bit, we must
   //       make sure we don't cast privates to `any` in order to prevent regressions.
