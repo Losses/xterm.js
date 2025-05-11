@@ -361,11 +361,9 @@ export class PostProcessRenderer extends Disposable {
   private _vao: WebGLVertexArrayObject;
   private _vertexBuffer: WebGLBuffer;
   private _uTimeLocation: WebGLUniformLocation;
-  private _uResolutionLocation: WebGLUniformLocation;
   private _uSrcLocation: WebGLUniformLocation;
   private _uScaleLocation: WebGLUniformLocation;
   private _uBackgroundLocation: WebGLUniformLocation;
-  private _uOffsetLocation: WebGLUniformLocation;
 
   constructor(private _gl: IWebGL2RenderingContext, private _dimensions: IRenderDimensions) {
     super();
@@ -377,11 +375,9 @@ export class PostProcessRenderer extends Disposable {
     ));
 
     this._uTimeLocation = throwIfFalsy(_gl.getUniformLocation(this._program, 'time'));
-    this._uResolutionLocation = throwIfFalsy(_gl.getUniformLocation(this._program, 'resolution'));
     this._uSrcLocation = throwIfFalsy(_gl.getUniformLocation(this._program, 'src'));
     this._uScaleLocation = throwIfFalsy(_gl.getUniformLocation(this._program, 'u_Scale'));
     this._uBackgroundLocation = throwIfFalsy(_gl.getUniformLocation(this._program, 'u_Background'));
-    this._uOffsetLocation = throwIfFalsy(_gl.getUniformLocation(this._program, 'offset'));
 
     const vertices = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
     this._vertexBuffer = throwIfFalsy(_gl.createBuffer());
@@ -408,17 +404,11 @@ export class PostProcessRenderer extends Disposable {
     gl.bindVertexArray(this._vao);
 
     gl.uniform1f(this._uTimeLocation, time);
-    gl.uniform2f(
-      this._uResolutionLocation,
-      this._dimensions.device.canvas.width,
-      this._dimensions.device.canvas.height
-    );
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.uniform1i(this._uSrcLocation, 0);
     gl.uniform1f(this._uScaleLocation, scale);
     gl.uniform4fv(this._uBackgroundLocation, bgColor);
-    gl.uniform2f(this._uOffsetLocation, 0, 0);
 
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     gl.bindVertexArray(null as unknown as IWebGLVertexArrayObject);
