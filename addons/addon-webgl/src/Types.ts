@@ -30,6 +30,7 @@ export interface IWebGL2RenderingContext extends WebGLRenderingContext {
   createVertexArray(): IWebGLVertexArrayObject;
   bindVertexArray(vao: IWebGLVertexArrayObject): void;
   deleteVertexArray(vao: IWebGLVertexArrayObject): void;
+  texStorage2D(mode: number, count: number, type: number, offset: number, instanceCount: number): void;
   drawElementsInstanced(mode: number, count: number, type: number, offset: number, instanceCount: number): void;
 }
 

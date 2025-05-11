@@ -150,9 +150,6 @@ export class WebglRenderer extends Disposable implements IRenderer {
 
 
     this._framebuffer = this._gl.createFramebuffer();
-    this._texture = this._gl.createTexture();
-    this._updateFramebuffer();
-
     this._postProcessStartTime = performance.now();
     this._postProcessRenderer = this._register(new MutableDisposable());
     this._postProcessRenderer.value = new PostProcessRenderer(this._gl, this.dimensions);
@@ -172,15 +169,19 @@ export class WebglRenderer extends Disposable implements IRenderer {
     const height = this.dimensions.device.canvas.height;
 
     if (width === 0 || height === 0) {
-      console.warn('WebglRenderer: Skipping framebuffer update due to zero dimensions.');
-      // Ensure we don't try to create a 0x0 texture
-      if (this._texture) { // If texture exists, make it a 1x1 placeholder or unbind
-        gl.bindTexture(gl.TEXTURE_2D, this._texture);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, null); // Minimal valid texture
-        gl.bindTexture(gl.TEXTURE_2D, null);
-      }
-      // Or simply return if we don't want to attach an incomplete texture to the framebuffer
+      console.warn('WebglRenderer: Canvas dimensions are zero, skipping framebuffer update.');
       return;
+    }
+
+    console.log('WILL CREATE TEXTURE');
+    if (!this._texture) {
+      this._texture = gl.createTexture();
+      console.log('CANVAS DETAIL:');
+      console.log(width, height);
+      if (!this._texture) {
+        console.error('WebglRenderer: Failed to create texture.');
+        return;
+      }
     }
 
     gl.bindTexture(gl.TEXTURE_2D, this._texture);
@@ -389,6 +390,19 @@ export class WebglRenderer extends Disposable implements IRenderer {
   }
 
   public renderRows(start: number, end: number): void {
+    if (!this._charSizeService.width || !this._charSizeService.height) {
+      // charSizeService dimensions not available, skipping rendering update.
+      return;
+    }
+
+    if (this.dimensions.device.canvas.width === 0 || this.dimensions.device.canvas.height === 0) {
+      return;
+    }
+
+    if (!this._texture) {
+      this._updateFramebuffer();
+    }
+
     if (!this._isAttached) {
       if (this._coreBrowserService.window.document.body.contains(this._core.screenElement!) &&
             this._charSizeService.width && this._charSizeService.height) {
