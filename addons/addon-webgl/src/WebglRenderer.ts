@@ -69,6 +69,8 @@ export class WebglRenderer extends Disposable implements IRenderer {
   private _framebuffer: WebGLFramebuffer | null = null;
   private _texture: WebGLTexture | null = null;
   private _time: number = 0;
+  // Add new flag to prevent duplicate post process calls in the same frame
+  private _postProcessCalled: boolean = false;
 
   constructor(
     private _terminal: Terminal,
@@ -455,6 +457,10 @@ export class WebglRenderer extends Disposable implements IRenderer {
   }
 
   private _renderPostProcess(): void {
+    if (this._postProcessCalled) {
+      return;
+    }
+    this._postProcessCalled = true;
     if (this._postProcessRenderer.value && this._texture) {
       const time = (Date.now() - this._postProcessStartTime) / 1000;
       const scale = this._optionsService.rawOptions.postProcessScale || 1.0;
@@ -469,6 +475,7 @@ export class WebglRenderer extends Disposable implements IRenderer {
   }
 
   private _animatePostProcess = (): void => {
+    this._postProcessCalled = false;
     this._renderPostProcess();
     // eslint-disable-next-line no-restricted-syntax
     window.requestAnimationFrame(this._animatePostProcess);
