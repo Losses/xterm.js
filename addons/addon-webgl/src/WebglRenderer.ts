@@ -150,9 +150,11 @@ export class WebglRenderer extends Disposable implements IRenderer {
 
 
     this._framebuffer = this._gl.createFramebuffer();
-    this._postProcessStartTime = performance.now();
+    this._postProcessStartTime = Date.now();
     this._postProcessRenderer = this._register(new MutableDisposable());
     this._postProcessRenderer.value = new PostProcessRenderer(this._gl, this.dimensions);
+
+    this._animatePostProcess();
 
     this._register(toDisposable(() => {
       for (const l of this._renderLayers) {
@@ -445,12 +447,18 @@ export class WebglRenderer extends Disposable implements IRenderer {
 
     gl.viewport(0, 0, this.dimensions.device.canvas.width, this.dimensions.device.canvas.height);
 
-    if (this._postProcessRenderer.value && this._texture) {
-      const time = (performance.now() - this._postProcessStartTime) / 1000;
+    this._renderPostProcess();
 
+    for (const layer of this._renderLayers) {
+      layer.handleGridChanged(this._terminal, 0, this._terminal.rows - 1);
+    }
+  }
+
+  private _renderPostProcess(): void {
+    if (this._postProcessRenderer.value && this._texture) {
+      const time = (Date.now() - this._postProcessStartTime) / 1000;
       const scale = this._optionsService.rawOptions.postProcessScale || 1.0;
       const backgroundColor = this._themeService.colors.background;
-
       this._postProcessRenderer.value.render(
         this._texture,
         time,
@@ -458,11 +466,13 @@ export class WebglRenderer extends Disposable implements IRenderer {
         backgroundColor
       );
     }
-
-    for (const layer of this._renderLayers) {
-      layer.handleGridChanged(this._terminal, 0, this._terminal.rows - 1);
-    }
   }
+
+  private _animatePostProcess = (): void => {
+    this._renderPostProcess();
+    // eslint-disable-next-line no-restricted-syntax
+    window.requestAnimationFrame(this._animatePostProcess);
+  };
 
   private _updateCursorBlink(): void {
     if (this._coreService.decPrivateModes.cursorBlink ?? this._terminal.options.cursorBlink) {
