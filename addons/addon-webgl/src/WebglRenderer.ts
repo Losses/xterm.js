@@ -173,11 +173,8 @@ export class WebglRenderer extends Disposable implements IRenderer {
       return;
     }
 
-    console.log('WILL CREATE TEXTURE');
     if (!this._texture) {
       this._texture = gl.createTexture();
-      console.log('CANVAS DETAIL:');
-      console.log(width, height);
       if (!this._texture) {
         console.error('WebglRenderer: Failed to create texture.');
         return;

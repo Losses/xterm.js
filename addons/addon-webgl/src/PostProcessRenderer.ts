@@ -4,6 +4,7 @@ import { Disposable } from 'vs/base/common/lifecycle';
 import { IRenderDimensions } from 'browser/renderer/shared/Types';
 import { throwIfFalsy } from 'browser/renderer/shared/RendererUtils';
 import { IWebGL2RenderingContext, IWebGLVertexArrayObject } from 'Types';
+import { TextureAtlas } from 'TextureAtlas';
 
 const postProcessVertexShaderSource = `#version 300 es
 layout(location=0) in vec2 a_position;
@@ -31,7 +32,7 @@ uniform vec2  offset;         // Standard VFX.js offset uniform
 
 #define ENABLE_CURVE            1
 #define ENABLE_OVERSCAN         1
-#define ENABLE_BLOOM            1
+#define ENABLE_BLOOM            0
 #define ENABLE_BLUR             1
 #define ENABLE_GRAYSCALE        0
 #define ENABLE_BLACKLEVEL       1
@@ -404,14 +405,16 @@ export class PostProcessRenderer extends Disposable {
     gl.bindVertexArray(this._vao);
 
     gl.uniform1f(this._uTimeLocation, time);
-    gl.activeTexture(gl.TEXTURE0);
+    gl.activeTexture(gl.TEXTURE0 + TextureAtlas.maxAtlasPages!);
     gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.uniform1i(this._uSrcLocation, 0);
+    gl.uniform1i(this._uSrcLocation, TextureAtlas.maxAtlasPages!);
     gl.uniform1f(this._uScaleLocation, scale);
     gl.uniform4fv(this._uBackgroundLocation, bgColor);
 
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     gl.bindVertexArray(null as unknown as IWebGLVertexArrayObject);
+
+    gl.bindTexture(gl.TEXTURE_2D, null);
   }
 
   public dispose(): void {
